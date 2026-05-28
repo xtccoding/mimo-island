@@ -78,17 +78,19 @@ jobs:
         run: |
           mkdir release
           copy cpp\build\MiMoIsland.exe release\
-          $qtBin = "${{ env.Qt6_DIR }}\bin"
-          copy "$qtBin\Qt6Core.dll" release\
-          copy "$qtBin\Qt6Gui.dll" release\
-          copy "$qtBin\Qt6Widgets.dll" release\
-          copy "$qtBin\Qt6Network.dll" release\
-          copy "$qtBin\Qt6Svg.dll" release\
+          $qtDir = "${{ env.Qt6_DIR }}"
+          if (-not $qtDir) { $qtDir = "${{ env.QT_ROOT_DIR }}" }
+          if (-not $qtDir) { $qtDir = "${{ runner.Qt_ROOT_DIR }}" }
+          copy "$qtDir\bin\Qt6Core.dll" release\
+          copy "$qtDir\bin\Qt6Gui.dll" release\
+          copy "$qtDir\bin\Qt6Widgets.dll" release\
+          copy "$qtDir\bin\Qt6Network.dll" release\
+          copy "$qtDir\bin\Qt6Svg.dll" release\
           mkdir release\platforms
-          copy "$qtBin\..\plugins\platforms\qwindows.dll" release\platforms\
+          copy "$qtDir\plugins\platforms\qwindows.dll" release\platforms\
           mkdir release\tls
-          copy "$qtBin\..\plugins\tls\qopensslbackend.dll" release\tls\
-          copy "$qtBin\..\plugins\tls\qschannelbackend.dll" release\tls\
+          copy "$qtDir\plugins\tls\qopensslbackend.dll" release\tls\
+          copy "$qtDir\plugins\tls\qschannelbackend.dll" release\tls\
       
       - name: Create zip
         run: Compress-Archive -Path release\* -DestinationPath MiMoIsland-CPP.zip
