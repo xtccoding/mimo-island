@@ -20,32 +20,41 @@ API_URL = "https://platform.xiaomimimo.com/api/v1/tokenPlan/usage"
 COMPACT_W, COMPACT_H = 168, 44
 EXPANDED_W, EXPANDED_H = 320, 195
 
+# 预定义颜色常量（避免重复创建）
 C_TEXT = QColor(235, 237, 245)
 C_LABEL = QColor(120, 125, 145)
 C_DIM = QColor(80, 85, 100)
 C_ACCENT = QColor(70, 140, 255)
 C_ERROR = QColor(255, 100, 100)
+C_BG_0 = QColor(14, 14, 20, 220)
+C_BG_1 = QColor(18, 18, 26, 217)
+C_GLOW_HOVER = QColor(70, 140, 255)
+C_GLOW_ERROR = QColor(255, 80, 80)
 
 CONFIG_DIR = Path.home() / ".mimo_monitor"
 PROFILES_FILE = CONFIG_DIR / "profiles.json"
 
+# 缓存字体对象（避免重复创建）
+_font_cache = {}
+
+def _get_font(key, size, weight):
+    if key not in _font_cache:
+        f = QFont()
+        if key.startswith('mono'):
+            f.setFamilies(["JetBrains Mono", "Cascadia Code", "Consolas", "SF Mono"])
+        else:
+            f.setFamilies(["Segoe UI Variable Display", "Microsoft YaHei UI", "PingFang SC", "SF Pro Display"])
+        f.setPixelSize(size)
+        f.setWeight(weight)
+        f.setHintingPreference(QFont.PreferNoHinting)
+        _font_cache[key] = f
+    return _font_cache[key]
 
 def font_ui(size=10, weight=QFont.Normal):
-    f = QFont()
-    f.setFamilies(["Segoe UI Variable Display", "Microsoft YaHei UI", "PingFang SC", "SF Pro Display"])
-    f.setPixelSize(size)
-    f.setWeight(weight)
-    f.setHintingPreference(QFont.PreferNoHinting)
-    return f
-
+    return _get_font(f'ui_{size}_{weight.value}', size, weight)
 
 def font_mono(size=11, weight=QFont.Medium):
-    f = QFont()
-    f.setFamilies(["JetBrains Mono", "Cascadia Code", "Consolas", "SF Mono"])
-    f.setPixelSize(size)
-    f.setWeight(weight)
-    f.setHintingPreference(QFont.PreferNoHinting)
-    return f
+    return _get_font(f'mono_{size}_{weight.value}', size, weight)
 
 
 class CookieProfile:
@@ -465,10 +474,12 @@ class DynamicIsland(QMainWindow):
 
     def _tick(self):
         self._phase += 0.04
-        self._pct.tick()
-        self._used.tick()
+        pct_changed = self._pct.tick()
+        used_changed = self._used.tick()
         self._glow_speed += (self._glow_target_speed - self._glow_speed) * 0.1
-        self.update()
+        # 只在有实际变化时才重绘
+        if pct_changed or used_changed or self._hovered or self._error_code == 401:
+            self.update()
 
     def toggle_top(self):
         self._pinned = not self._pinned

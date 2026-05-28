@@ -22,12 +22,33 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller
+          pip install pyinstaller pillow cairosvg
           pip install -e .
       
-      - name: Build exe with PyInstaller
+      - name: Generate ICO from SVG
         run: |
-          pyinstaller --onefile --windowed --name "MiMo-Island" --icon=NONE src/mimo_island/main.py
+          python -c "
+          import cairosvg
+          from PIL import Image
+          import io
+          
+          # Convert SVG to PNG
+          png_data = cairosvg.svg2png(url='assets/icon.svg', output_width=256, output_height=256)
+          img = Image.open(io.BytesIO(png_data))
+          
+          # Generate ICO with multiple sizes
+          sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+          img.save('assets/icon.ico', format='ICO', sizes=sizes)
+          print('ICO generated successfully')
+          "
+      
+      - name: Build exe with PyInstaller
+        run: pyinstaller mimo-island.spec
+      
+      - name: Check exe size
+        run: |
+          $size = (Get-Item dist/MiMo-Island.exe).Length / 1MB
+          Write-Host "Exe size: $([math]::Round($size, 2)) MB"
       
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -67,9 +88,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts/
-      
-      - name: List artifacts
-        run: ls -R artifacts/
       
       - name: Create Release
         uses: softprops/action-gh-release@v2
