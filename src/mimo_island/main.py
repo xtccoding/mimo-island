@@ -8,7 +8,7 @@ from PySide6.QtCore import (
     Qt, QPoint, QThread, Signal, QTimer, QPropertyAnimation,
     QEasingCurve, QRect, QRectF, QParallelAnimationGroup, Property
 )
-from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QInputDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QInputDialog, QMessageBox, QLineEdit
 from PySide6.QtGui import (
     QColor, QPainter, QPainterPath, QFont, QCursor,
     QLinearGradient, QBrush, QPen, QAction
@@ -20,7 +20,20 @@ API_URL = "https://platform.xiaomimimo.com/api/v1/tokenPlan/usage"
 COMPACT_W, COMPACT_H = 168, 44
 EXPANDED_W, EXPANDED_H = 320, 195
 
-# 预定义颜色常量（避免重复创建）
+# 贴边模式尺寸
+DOCKED_H = 6
+DOCKED_W = 6
+DOCKED_LEN = 200
+DOCK_THRESHOLD = 10
+
+class DockMode:
+    NONE = 0
+    TOP = 1
+    BOTTOM = 2
+    LEFT = 3
+    RIGHT = 4
+
+# 预定义颜色常量
 C_TEXT = QColor(235, 237, 245)
 C_LABEL = QColor(120, 125, 145)
 C_DIM = QColor(80, 85, 100)
@@ -33,8 +46,8 @@ C_GLOW_ERROR = QColor(255, 80, 80)
 
 CONFIG_DIR = Path.home() / ".mimo_monitor"
 PROFILES_FILE = CONFIG_DIR / "profiles.json"
+STATE_FILE = CONFIG_DIR / "state.json"
 
-# 缓存字体对象（避免重复创建）
 _font_cache = {}
 
 def _get_font(key, size, weight):
@@ -120,6 +133,11 @@ class ProfileManager:
                 self.active_index = max(0, len(self.profiles) - 1)
             self.save()
     
+    def rename(self, index, new_name):
+        if 0 <= index < len(self.profiles):
+            self.profiles[index].name = new_name
+            self.save()
+    
     def get_active(self):
         if self.profiles and 0 <= self.active_index < len(self.profiles):
             return self.profiles[self.active_index]
@@ -145,15 +163,10 @@ class ProfileManager:
 
 
 def extract_cookie(text):
-    """从各种格式提取 Cookie"""
     import re
-    
-    # fetch 代码
     match = re.search(r'["\']cookie["\']\s*:\s*["\'](.+?)["\']', text, re.DOTALL)
     if match:
         return match.group(1)
-    
-    # curl -b 或 --cookie
     if "-b '" in text or "--cookie '" in text:
         start = text.find("-b '")
         if start == -1:
@@ -168,16 +181,11 @@ def extract_cookie(text):
                     quote_end += 1
                 if quote_end < len(text):
                     return text[quote_start + 1:quote_end]
-    
-    # curl -H 'cookie: ...'
     match = re.search(r"-H\s+['\"]cookie:\s*(.+?)['\"]", text, re.DOTALL)
     if match:
         return match.group(1)
-    
-    # 纯字符串
     if '=' in text and ';' in text:
         return text.strip()
-    
     return text.strip()
 
 
@@ -193,7 +201,6 @@ class FetchThread(QThread):
         if not profile:
             self.data_fetched.emit({"used": 0, "total": 0, "percent": 0, "ok": False, "msg": "请添加Cookie"})
             return
-        
         try:
             headers = {
                 'accept': '*/*',
@@ -204,38 +211,23 @@ class FetchThread(QThread):
                 'referer': 'https://platform.xiaomimimo.com/console/plan-manage',
                 'cookie': profile.cookie_str
             }
-            
             r = requests.get(API_URL, headers=headers, timeout=10)
-            
             if r.status_code == 200:
                 res = r.json()
                 data = res.get('data', {})
-                
-                # 获取月度总用量
                 month_usage = data.get('monthUsage', {})
                 month_items = month_usage.get('items', [])
-                month_used = 0
-                month_total = 0
-                month_percent = 0
-                
+                month_used = month_total = month_percent = 0
                 for item in month_items:
                     if item.get('name') == 'month_total_token':
                         month_used = item.get('used', 0)
                         month_total = item.get('limit', 0)
                         month_percent = item.get('percent', 0) * 100
                         break
-                
-                # 获取套餐和补偿用量
                 usage = data.get('usage', {})
                 items = usage.get('items', [])
-                
-                plan_used = 0
-                plan_total = 0
-                plan_percent = 0
-                comp_used = 0
-                comp_total = 0
-                comp_percent = 0
-                
+                plan_used = plan_total = plan_percent = 0
+                comp_used = comp_total = comp_percent = 0
                 for item in items:
                     if item.get('name') == 'plan_total_token':
                         plan_used = item.get('used', 0)
@@ -245,18 +237,11 @@ class FetchThread(QThread):
                         comp_used = item.get('used', 0)
                         comp_total = item.get('limit', 0)
                         comp_percent = item.get('percent', 0) * 100
-                
                 self.pm.mark_success()
                 self.data_fetched.emit({
-                    "plan_used": plan_used,
-                    "plan_total": plan_total,
-                    "plan_percent": plan_percent,
-                    "comp_used": comp_used,
-                    "comp_total": comp_total,
-                    "comp_percent": comp_percent,
-                    "month_used": month_used,
-                    "month_total": month_total,
-                    "month_percent": month_percent,
+                    "plan_used": plan_used, "plan_total": plan_total, "plan_percent": plan_percent,
+                    "comp_used": comp_used, "comp_total": comp_total, "comp_percent": comp_percent,
+                    "month_used": month_used, "month_total": month_total, "month_percent": month_percent,
                     "ok": True
                 })
             elif r.status_code == 401:
@@ -327,33 +312,27 @@ class ContextMenu(QMenu):
     
     def _build_menu(self):
         self.clear()
-        
         self.profile_menu = QMenu("切换账号", self)
         self.profile_menu.setStyleSheet(self.styleSheet())
         self.addMenu(self.profile_menu)
-        
         a_add = QAction("添加Cookie", self)
         a_add.triggered.connect(self.parent.add_cookie)
         self.addAction(a_add)
-        
+        a_rename = QAction("重命名当前", self)
+        a_rename.triggered.connect(self.parent.rename_current_cookie)
+        self.addAction(a_rename)
         a_del = QAction("删除当前", self)
         a_del.triggered.connect(self.parent.delete_current_cookie)
         self.addAction(a_del)
-        
         self.addSeparator()
-        
         a1 = QAction("刷新数据", self)
         a1.triggered.connect(self.parent.fetch)
         self.addAction(a1)
-        
         self.addSeparator()
-        
         self._pin = QAction("取消置顶" if self.parent._pinned else "置顶窗口", self)
         self._pin.triggered.connect(self.parent.toggle_top)
         self.addAction(self._pin)
-        
         self.addSeparator()
-        
         a3 = QAction("退出程序", self)
         a3.triggered.connect(QApplication.quit)
         self.addAction(a3)
@@ -361,7 +340,6 @@ class ContextMenu(QMenu):
     def update_profiles(self):
         self.profile_menu.clear()
         pm = self.parent.pm
-        
         for i, profile in enumerate(pm.profiles):
             name = profile.name
             if profile.last_error:
@@ -371,7 +349,6 @@ class ContextMenu(QMenu):
             action.setChecked(i == pm.active_index)
             action.triggered.connect(lambda checked, idx=i: self.parent.switch_profile(idx))
             self.profile_menu.addAction(action)
-        
         if not pm.profiles:
             empty = QAction("(无配置)", self)
             empty.setEnabled(False)
@@ -394,6 +371,18 @@ class DynamicIsland(QMainWindow):
         self._error_msg = ""
         self._error_code = 0
 
+        self._dock_mode = DockMode.NONE
+        self._docked = False
+        self._dock_hovered = False
+        self._dock_opacity = 0.0
+        self._undocked_from_dock = False
+        self._mouse_pressed = False
+        self._last_dock_mode = DockMode.TOP
+        self._menu_open = False
+        self._re_dock_timer = QTimer(self)
+        self._re_dock_timer.setSingleShot(True)
+        self._re_dock_timer.timeout.connect(self._re_dock_check)
+
         self.data = {
             "plan_used": 0, "plan_total": 0, "plan_percent": 0,
             "comp_used": 0, "comp_total": 0, "comp_percent": 0,
@@ -412,9 +401,7 @@ class DynamicIsland(QMainWindow):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setMouseTracking(True)
 
-        s = QApplication.primaryScreen().geometry()
-        self.move((s.width() - COMPACT_W) // 2, 12)
-        self.resize(COMPACT_W, COMPACT_H)
+        self._load_state()
 
         self.menu = ContextMenu(self)
 
@@ -440,36 +427,67 @@ class DynamicIsland(QMainWindow):
     def add_cookie(self):
         text, ok = QInputDialog.getMultiLineText(
             self, "添加Cookie", 
-            "粘贴 Cookie（支持格式）：\n"
-            "• fetch 代码\n"
-            "• curl 命令\n"
-            "• 纯字符串\n\n"
-            "获取：F12 → Network → 右键请求 → Copy as fetch",
-            ""
+            "粘贴 Cookie（支持格式）：\n• fetch 代码\n• curl 命令\n• 纯字符串\n\n获取：F12 → Network → 右键请求 → Copy as fetch", ""
         )
         if ok and text.strip():
             cookie_str = extract_cookie(text.strip())
-            name, ok2 = QInputDialog.getText(
-                self, "命名配置", "配置名称：",
-                text=f"账号{len(self.pm.profiles) + 1}"
-            )
+            name, ok2 = QInputDialog.getText(self, "命名配置", "配置名称：", text=f"账号{len(self.pm.profiles) + 1}")
             if ok2 and name.strip():
                 self.pm.add(name.strip(), cookie_str)
                 self.menu.update_profiles()
                 self.fetch()
 
+    def _load_state(self):
+        if STATE_FILE.exists():
+            try:
+                data = json.loads(STATE_FILE.read_text(encoding='utf-8'))
+                dock_mode = data.get("dock_mode", 0)
+                x = data.get("x", -1)
+                y = data.get("y", -1)
+                if dock_mode > 0 and x >= 0 and y >= 0:
+                    self._dock_mode = dock_mode
+                    self._last_dock_mode = dock_mode
+                    self._docked = True
+                    self._dock_opacity = 1.0
+                    self.resize(DOCKED_LEN, DOCKED_H) if dock_mode in (DockMode.TOP, DockMode.BOTTOM) else self.resize(DOCKED_W, DOCKED_LEN)
+                    self.move(x, y)
+                    return
+            except:
+                pass
+        s = QApplication.primaryScreen().availableGeometry()
+        self.move((s.width() - COMPACT_W) // 2, s.top() + 12)
+        self.resize(COMPACT_W, COMPACT_H)
+
+    def _save_state(self):
+        CONFIG_DIR.mkdir(exist_ok=True)
+        pos = self.pos()
+        data = {
+            "dock_mode": self._dock_mode if self._docked else 0,
+            "x": pos.x(),
+            "y": pos.y()
+        }
+        STATE_FILE.write_text(json.dumps(data), encoding='utf-8')
+
+    def closeEvent(self, e):
+        self._save_state()
+        super().closeEvent(e)
+
     def delete_current_cookie(self):
         profile = self.pm.get_active()
         if profile:
-            reply = QMessageBox.question(
-                self, "确认删除",
-                f"删除配置 \"{profile.name}\" ？",
-                QMessageBox.Yes | QMessageBox.No
-            )
+            reply = QMessageBox.question(self, "确认删除", f"删除配置 \"{profile.name}\" ？", QMessageBox.Yes | QMessageBox.No)
             if reply == QMessageBox.Yes:
                 self.pm.remove(self.pm.active_index)
                 self.menu.update_profiles()
                 self.fetch()
+
+    def rename_current_cookie(self):
+        profile = self.pm.get_active()
+        if profile:
+            name, ok = QInputDialog.getText(self, "重命名", "新名称：", QLineEdit.Normal, profile.name)
+            if ok and name.strip():
+                self.pm.rename(self.pm.active_index, name.strip())
+                self.menu.update_profiles()
 
     def switch_profile(self, index):
         self.pm.set_active(index)
@@ -487,6 +505,15 @@ class DynamicIsland(QMainWindow):
 
     glowOffset = Property(float, get_glow_offset, set_glow_offset)
 
+    def get_dock_opacity(self):
+        return self._dock_opacity
+
+    def set_dock_opacity(self, v):
+        self._dock_opacity = v
+        self.update()
+
+    dockOpacity = Property(float, get_dock_opacity, set_dock_opacity)
+
     def fetch(self):
         if not self.thread.isRunning():
             self.thread.start()
@@ -494,7 +521,6 @@ class DynamicIsland(QMainWindow):
     def on_data(self, d):
         if d["ok"]:
             self.data = d
-            # 优先显示正在使用的额度（补偿额度先用）
             if d.get("comp_used", 0) > 0:
                 self._pct.target(d["comp_percent"])
                 self._used.target(d["comp_used"])
@@ -512,8 +538,7 @@ class DynamicIsland(QMainWindow):
         pct_changed = self._pct.tick()
         used_changed = self._used.tick()
         self._glow_speed += (self._glow_target_speed - self._glow_speed) * 0.1
-        # 只在有实际变化时才重绘
-        if pct_changed or used_changed or self._hovered or self._error_code == 401:
+        if pct_changed or used_changed or self._hovered or self._error_code == 401 or self._docked:
             self.update()
 
     def toggle_top(self):
@@ -529,20 +554,65 @@ class DynamicIsland(QMainWindow):
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
 
+        if self._docked:
+            self._draw_docked(p, w, h)
+        else:
+            path = QPainterPath()
+            r = 12 if self._expanded else min(h / 2, 22)
+            path.addRoundedRect(QRectF(0, 0, w, h), r, r)
+            p.setClipPath(path, Qt.IntersectClip)
+            self._draw_bg(p, w, h)
+            self._draw_glow(p, w, h)
+            self._draw_border(p, w, h)
+            if not self._expanded:
+                self._draw_compact(p, w, h)
+            else:
+                self._draw_expanded(p, w, h)
+        p.end()
+
+    def _draw_docked(self, p, w, h):
+        pct = self._pct.val
+        a = self._dock_opacity
+        if a < 0.01:
+            return
+
+        is_horiz = self._dock_mode in (DockMode.TOP, DockMode.BOTTOM)
+        
+        r = min(h / 2, 3) if is_horiz else min(w / 2, 3)
         path = QPainterPath()
-        r = 12 if self._expanded else min(h / 2, 22)
         path.addRoundedRect(QRectF(0, 0, w, h), r, r)
         p.setClipPath(path, Qt.IntersectClip)
 
-        self._draw_bg(p, w, h)
-        self._draw_glow(p, w, h)
-        self._draw_border(p, w, h)
+        bg = QLinearGradient(0, 0, w, h)
+        bg.setColorAt(0, QColor(14, 14, 20, int(200 * a)))
+        bg.setColorAt(1, QColor(18, 18, 26, int(200 * a)))
+        p.setPen(Qt.NoPen)
+        p.setBrush(bg)
+        p.drawRoundedRect(QRectF(0, 0, w, h), r, r)
 
-        if not self._expanded:
-            self._draw_compact(p, w, h)
+        glow_a = 0.15 + 0.05 * math.sin(self._phase)
+        g = QColor(70, 140, 255, int(255 * glow_a * a))
+        p.setBrush(g)
+        p.drawRoundedRect(QRectF(-1, -1, w + 2, h + 2), r + 1, r + 1)
+
+        if is_horiz:
+            fw = (w - 4) * min(pct / 100, 1)
+            if fw > 1:
+                fg = QLinearGradient(2, 0, 2 + fw, 0)
+                fg.setColorAt(0, QColor(59, 130, 246, int(255 * a)))
+                fg.setColorAt(1, QColor(34, 211, 238, int(255 * a)))
+                p.setPen(Qt.NoPen)
+                p.setBrush(fg)
+                p.drawRoundedRect(QRectF(2, 2, fw, h - 4), r, r)
         else:
-            self._draw_expanded(p, w, h)
-        p.end()
+            fh = (h - 4) * min(pct / 100, 1)
+            if fh > 1:
+                fg = QLinearGradient(0, h - 2 - fh, 0, h - 2)
+                fg.setColorAt(0, QColor(59, 130, 246, int(255 * a)))
+                fg.setColorAt(1, QColor(34, 211, 238, int(255 * a)))
+                p.setPen(Qt.NoPen)
+                p.setBrush(fg)
+                p.drawRoundedRect(QRectF(2, h - 2 - fh, w - 4, fh), r, r)
 
     def _draw_bg(self, p, w, h):
         grad = QLinearGradient(0, 0, w, h)
@@ -563,7 +633,6 @@ class DynamicIsland(QMainWindow):
             if self._hovered:
                 glow_a += 0.08
             g = QColor(70, 140, 255, int(255 * glow_a))
-        
         p.setPen(Qt.NoPen)
         p.setBrush(g)
         r = 14 if self._expanded else min(h / 2, 22) + 2
@@ -573,7 +642,6 @@ class DynamicIsland(QMainWindow):
         path = QPainterPath()
         r = 12 if self._expanded else min(h / 2, 22)
         path.addRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), r, r)
-
         if self._error_code == 401:
             ba = 40 + int(20 * math.sin(self._phase * 2))
             bg = QLinearGradient(0, 0, w, 0)
@@ -587,7 +655,6 @@ class DynamicIsland(QMainWindow):
             bg.setColorAt(0.33, QColor(100, 200, 255, ba))
             bg.setColorAt(0.66, QColor(140, 100, 255, ba))
             bg.setColorAt(1, QColor(70, 140, 255, ba))
-        
         p.setPen(QPen(QBrush(bg), 1.2))
         p.setBrush(Qt.NoBrush)
         p.drawPath(path)
@@ -596,11 +663,9 @@ class DynamicIsland(QMainWindow):
         path = QPainterPath()
         r = 12 if self._expanded else min(h / 2, 22)
         path.addRoundedRect(QRectF(0, 0, w, h), r, r)
-
         offset = self._glow_offset
         cx = w * offset
         band_w = w * 0.4
-
         if self._error_code == 401:
             g = QLinearGradient(cx - band_w, 0, cx + band_w, 0)
             g.setColorAt(0.0, QColor(255, 255, 255, 0))
@@ -613,7 +678,6 @@ class DynamicIsland(QMainWindow):
             g.setColorAt(0.5, QColor(100, 200, 255, 18))
             g.setColorAt(0.7, QColor(100, 200, 255, 8))
             g.setColorAt(1.0, QColor(255, 255, 255, 0))
-
         p.setPen(Qt.NoPen)
         p.setBrush(g)
         p.drawPath(path)
@@ -622,7 +686,6 @@ class DynamicIsland(QMainWindow):
         self._draw_flow_light(p, w, h)
         pct = self._pct.val
         cy = h / 2
-
         ix = 30
         isz = 8
         p.setPen(Qt.NoPen)
@@ -636,7 +699,6 @@ class DynamicIsland(QMainWindow):
             ig.setColorAt(1, C_ACCENT)
         p.setBrush(ig)
         p.drawEllipse(int(ix - isz / 2), int(cy - isz / 2), isz, isz)
-
         if self._error_msg:
             p.setPen(C_ERROR if self._error_code == 401 else QColor(255, 200, 100))
             p.setFont(font_ui(9))
@@ -645,7 +707,6 @@ class DynamicIsland(QMainWindow):
             p.setPen(C_TEXT)
             p.setFont(font_mono(15, QFont.DemiBold))
             p.drawText(QRectF(46, 0, 55, h), Qt.AlignVCenter | Qt.AlignLeft, f"{pct:.1f}")
-
             p.setPen(C_DIM)
             p.setFont(font_ui(10))
             p.drawText(QRectF(108, 0, 30, h), Qt.AlignVCenter | Qt.AlignLeft, "%")
@@ -656,19 +717,14 @@ class DynamicIsland(QMainWindow):
         a = self._item_opacity
         if a < 0.01:
             return
-
         alpha = int(255 * a)
-
         title_color = QColor(235, 237, 245, alpha)
-        label_color = QColor(120, 125, 145, alpha)
         val_color = QColor(240, 242, 250, alpha)
         dim_color = QColor(80, 85, 100, alpha)
         error_color = QColor(255, 100, 100, alpha)
-
         p.setPen(title_color)
         p.setFont(font_ui(13, QFont.DemiBold))
         p.drawText(QRectF(pad, 22, 200, 24), Qt.AlignVCenter | Qt.AlignLeft, "MiMo Token Monitor")
-
         profile = self.pm.get_active()
         if profile:
             profile_text = profile.name
@@ -677,10 +733,8 @@ class DynamicIsland(QMainWindow):
             p.setPen(QColor(100, 200, 255, int(alpha * 0.7)))
             p.setFont(font_ui(9))
             p.drawText(QRectF(pad, 42, 200, 16), Qt.AlignVCenter | Qt.AlignLeft, profile_text)
-
         y0 = 66
         rh = 24
-
         if self._error_msg:
             if self._error_code == 401:
                 p.setPen(error_color)
@@ -698,38 +752,30 @@ class DynamicIsland(QMainWindow):
             plan_total = self.data.get('plan_total', 0)
             comp_used = self.data.get('comp_used', 0)
             comp_total = self.data.get('comp_total', 0)
-            
-            # 补偿额度（优先显示）
             if comp_total > 0:
-                p.setPen(QColor(100, 255, 180, alpha))  # 绿色
+                p.setPen(QColor(100, 255, 180, alpha))
                 p.setFont(font_ui(9, QFont.Light))
                 p.drawText(QRectF(pad, y0, 60, rh), Qt.AlignVCenter | Qt.AlignLeft, "补偿")
                 p.setPen(val_color)
                 p.setFont(font_mono(10, QFont.Medium))
                 p.drawText(QRectF(pad + 60, y0, 180, rh), Qt.AlignVCenter | Qt.AlignLeft, f"{comp_used:,} / {comp_total:,}")
                 y0 += rh
-            
-            # 主套餐额度
             if plan_total > 0:
-                p.setPen(QColor(100, 200, 255, alpha))  # 蓝色
+                p.setPen(QColor(100, 200, 255, alpha))
                 p.setFont(font_ui(9, QFont.Light))
                 p.drawText(QRectF(pad, y0, 60, rh), Qt.AlignVCenter | Qt.AlignLeft, "套餐")
                 p.setPen(val_color)
                 p.setFont(font_mono(10, QFont.Medium))
                 p.drawText(QRectF(pad + 60, y0, 180, rh), Qt.AlignVCenter | Qt.AlignLeft, f"{plan_used:,} / {plan_total:,}")
                 y0 += rh
-            
-            # 进度条
             by = y0 + 8
             bx = float(pad)
             bw = float(w - pad * 2)
             bh = 4.0
             br = 2.0
-
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(255, 255, 255, 12))
             p.drawRoundedRect(QRectF(bx, by, bw, bh), br, br)
-
             pct = self._pct.val
             fw = bw * min(pct / 100, 1)
             if fw > 1:
@@ -738,11 +784,9 @@ class DynamicIsland(QMainWindow):
                 fg.setColorAt(1, QColor(34, 211, 238, alpha))
                 p.setBrush(fg)
                 p.drawRoundedRect(QRectF(bx, by, fw, bh), br, br)
-
             p.setPen(QColor(200, 205, 220, alpha))
             p.setFont(font_mono(10, QFont.Medium))
             p.drawText(QRectF(pad, by + bh + 8, 80, 18), Qt.AlignVCenter | Qt.AlignLeft, f"{pct:.2f}%")
-
         p.setPen(dim_color)
         p.setFont(font_ui(9, QFont.Light))
         p.drawText(QRectF(pad, h - 24, w - pad * 2, 14), Qt.AlignCenter, "右键菜单 · 左键收起")
@@ -751,40 +795,164 @@ class DynamicIsland(QMainWindow):
         self._hovered = True
         self._glow_target_speed = 0.002
         self.setCursor(QCursor(Qt.PointingHandCursor))
+        if self._docked and not self._dock_hovered:
+            self._dock_hovered = True
+            self._undocked_from_dock = True
+            self._undock()
 
     def leaveEvent(self, e):
         self._hovered = False
         self._glow_target_speed = 0.0008
         self.setCursor(QCursor(Qt.ArrowCursor))
+        if self._undocked_from_dock and not self._mouse_pressed and not self._menu_open:
+            self._re_dock_timer.start(400)
+        self._dock_hovered = False
+
+    def _re_dock_check(self):
+        if self._undocked_from_dock and not self._mouse_pressed and not self._hovered:
+            self._dock(self._last_dock_mode)
 
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
+            self._re_dock_timer.stop()
+            if self._docked:
+                return
+            self._mouse_pressed = True
+            self._undocked_from_dock = False
             self._drag_pos = e.globalPosition().toPoint() - self.pos()
             self._drag_moved = False
         elif e.button() == Qt.RightButton:
+            if self._docked:
+                return
+            self._menu_open = True
             self.menu.update_profiles()
             self.menu.set_pinned(self._pinned)
             self.menu.exec(e.globalPosition().toPoint())
+            self._menu_open = False
 
     def mouseMoveEvent(self, e):
-        if e.buttons() == Qt.LeftButton:
+        if e.buttons() == Qt.LeftButton and not self._docked:
             np = e.globalPosition().toPoint() - self._drag_pos
             if (np - self.pos()).manhattanLength() > 3:
                 self._drag_moved = True
                 self.move(np)
 
     def mouseReleaseEvent(self, e):
-        if e.button() == Qt.LeftButton and not self._drag_moved:
-            self.toggle()
+        if e.button() == Qt.LeftButton:
+            self._mouse_pressed = False
+            if self._docked:
+                return
+            if not self._drag_moved:
+                self.toggle()
+            else:
+                self._check_dock()
+                self._undocked_from_dock = False
+
+    def _check_dock_during_drag(self):
+        if self._expanded or self._docked:
+            return
+        screen = QApplication.primaryScreen().availableGeometry()
+        pos = self.pos()
+        w, h = self.width(), self.height()
+        dock_mode = DockMode.NONE
+        if pos.y() <= screen.top() + DOCK_THRESHOLD:
+            dock_mode = DockMode.TOP
+        elif pos.y() + h >= screen.bottom() - DOCK_THRESHOLD:
+            dock_mode = DockMode.BOTTOM
+        elif pos.x() <= screen.left() + DOCK_THRESHOLD:
+            dock_mode = DockMode.LEFT
+        elif pos.x() + w >= screen.right() - DOCK_THRESHOLD:
+            dock_mode = DockMode.RIGHT
+        if dock_mode != DockMode.NONE:
+            self._dock(dock_mode)
+
+    def _check_dock(self):
+        if self._expanded:
+            return
+        screen = QApplication.primaryScreen().availableGeometry()
+        pos = self.pos()
+        w, h = self.width(), self.height()
+        dock_mode = DockMode.NONE
+        if pos.y() <= screen.top() + DOCK_THRESHOLD:
+            dock_mode = DockMode.TOP
+        elif pos.y() + h >= screen.bottom() - DOCK_THRESHOLD:
+            dock_mode = DockMode.BOTTOM
+        elif pos.x() <= screen.left() + DOCK_THRESHOLD:
+            dock_mode = DockMode.LEFT
+        elif pos.x() + w >= screen.right() - DOCK_THRESHOLD:
+            dock_mode = DockMode.RIGHT
+        if dock_mode != DockMode.NONE:
+            self._dock(dock_mode)
+
+    def _dock(self, mode):
+        self._docked = True
+        self._dock_mode = mode
+        self._last_dock_mode = mode
+        self._expanded = False
+        screen = QApplication.primaryScreen().availableGeometry()
+        cur = self.geometry()
+        cx = cur.center().x()
+        cy = cur.center().y()
+        if mode == DockMode.TOP:
+            target = QRect(cx - DOCKED_LEN // 2, screen.top(), DOCKED_LEN, DOCKED_H)
+        elif mode == DockMode.BOTTOM:
+            target = QRect(cx - DOCKED_LEN // 2, screen.bottom() - DOCKED_H, DOCKED_LEN, DOCKED_H)
+        elif mode == DockMode.LEFT:
+            target = QRect(screen.left(), cy - DOCKED_LEN // 2, DOCKED_W, DOCKED_LEN)
+        elif mode == DockMode.RIGHT:
+            target = QRect(screen.right() - DOCKED_W, cy - DOCKED_LEN // 2, DOCKED_W, DOCKED_LEN)
+
+        self.hide()
+        self.setGeometry(target)
+        self._dock_opacity = 1.0
+        self.show()
+        self._save_state()
+
+    def _undock(self):
+        self._docked = False
+        self._dock_hovered = False
+        self._undocked_from_dock = True
+        cur = self.geometry()
+        screen = QApplication.primaryScreen().availableGeometry()
+        
+        nx = cur.center().x() - COMPACT_W // 2
+        ny = cur.center().y() - COMPACT_H // 2
+        
+        if self._last_dock_mode == DockMode.TOP:
+            ny = screen.top()
+        elif self._last_dock_mode == DockMode.BOTTOM:
+            ny = screen.bottom() - COMPACT_H
+        elif self._last_dock_mode == DockMode.LEFT:
+            nx = screen.left()
+        elif self._last_dock_mode == DockMode.RIGHT:
+            nx = screen.right() - COMPACT_W
+        
+        nx = max(screen.left(), min(nx, screen.right() - COMPACT_W))
+        ny = max(screen.top(), min(ny, screen.bottom() - COMPACT_H))
+        
+        target = QRect(nx, ny, COMPACT_W, COMPACT_H)
+
+        self._undock_anim = QParallelAnimationGroup(self)
+        geo = QPropertyAnimation(self, b"geometry")
+        geo.setDuration(350)
+        geo.setEasingCurve(QEasingCurve.OutExpo)
+        geo.setStartValue(cur)
+        geo.setEndValue(target)
+        self._undock_anim.addAnimation(geo)
+        opac = QPropertyAnimation(self, b"dockOpacity")
+        opac.setDuration(250)
+        opac.setStartValue(1.0)
+        opac.setEndValue(0.0)
+        opac.setEasingCurve(QEasingCurve.OutCubic)
+        self._undock_anim.addAnimation(opac)
+        self._undock_anim.start()
+        self._save_state()
 
     def toggle(self):
         tw = EXPANDED_W if not self._expanded else COMPACT_W
         th = EXPANDED_H if not self._expanded else COMPACT_H
-
         self._expanded = not self._expanded
-
         self._grp = QParallelAnimationGroup(self)
-
         geo = QPropertyAnimation(self, b"geometry")
         geo.setDuration(420)
         geo.setEasingCurve(QEasingCurve.OutExpo)
@@ -793,7 +961,6 @@ class DynamicIsland(QMainWindow):
         geo.setStartValue(cur)
         geo.setEndValue(QRect(nx, cur.top(), tw, th))
         self._grp.addAnimation(geo)
-
         if self._expanded:
             self._item_opacity = 0.0
             QTimer.singleShot(100, self._fade_in)
@@ -805,7 +972,6 @@ class DynamicIsland(QMainWindow):
             opac.setEndValue(0.0)
             opac.setEasingCurve(QEasingCurve.InCubic)
             self._grp.addAnimation(opac)
-
         self._grp.start()
 
     def _fade_in(self):
