@@ -53,6 +53,7 @@ public:
     
     void add(const QString& name, const QString& cookieStr);
     void remove(int index);
+    void rename(int index, const QString& newName);
     void setActive(int index);
     
     void markError(const QString& errorMsg);

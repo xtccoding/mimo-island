@@ -108,6 +108,14 @@ void ProfileManager::remove(int index)
     save();
 }
 
+void ProfileManager::rename(int index, const QString& newName)
+{
+    if (index >= 0 && index < m_profiles.size()) {
+        m_profiles[index].name = newName;
+        save();
+    }
+}
+
 void ProfileManager::setActive(int index)
 {
     if (index >= 0 && index < m_profiles.size()) {

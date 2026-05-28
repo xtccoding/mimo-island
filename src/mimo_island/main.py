@@ -379,6 +379,7 @@ class DynamicIsland(QMainWindow):
         self._mouse_pressed = False
         self._last_dock_mode = DockMode.TOP
         self._menu_open = False
+        self._animating = False
         self._re_dock_timer = QTimer(self)
         self._re_dock_timer.setSingleShot(True)
         self._re_dock_timer.timeout.connect(self._re_dock_check)
@@ -576,9 +577,9 @@ class DynamicIsland(QMainWindow):
         if a < 0.01:
             return
 
-        is_horiz = self._dock_mode in (DockMode.TOP, DockMode.BOTTOM)
+        is_vert = self._dock_mode in (DockMode.LEFT, DockMode.RIGHT)
         
-        r = min(h / 2, 3) if is_horiz else min(w / 2, 3)
+        r = min(h / 2, 3) if not is_vert else min(w / 2, 3)
         path = QPainterPath()
         path.addRoundedRect(QRectF(0, 0, w, h), r, r)
         p.setClipPath(path, Qt.IntersectClip)
@@ -595,13 +596,12 @@ class DynamicIsland(QMainWindow):
         p.setBrush(g)
         p.drawRoundedRect(QRectF(-1, -1, w + 2, h + 2), r + 1, r + 1)
 
-        if is_horiz:
+        if not is_vert:
             fw = (w - 4) * min(pct / 100, 1)
             if fw > 1:
                 fg = QLinearGradient(2, 0, 2 + fw, 0)
                 fg.setColorAt(0, QColor(59, 130, 246, int(255 * a)))
                 fg.setColorAt(1, QColor(34, 211, 238, int(255 * a)))
-                p.setPen(Qt.NoPen)
                 p.setBrush(fg)
                 p.drawRoundedRect(QRectF(2, 2, fw, h - 4), r, r)
         else:
@@ -610,7 +610,6 @@ class DynamicIsland(QMainWindow):
                 fg = QLinearGradient(0, h - 2 - fh, 0, h - 2)
                 fg.setColorAt(0, QColor(59, 130, 246, int(255 * a)))
                 fg.setColorAt(1, QColor(34, 211, 238, int(255 * a)))
-                p.setPen(Qt.NoPen)
                 p.setBrush(fg)
                 p.drawRoundedRect(QRectF(2, h - 2 - fh, w - 4, fh), r, r)
 
@@ -795,9 +794,10 @@ class DynamicIsland(QMainWindow):
         self._hovered = True
         self._glow_target_speed = 0.002
         self.setCursor(QCursor(Qt.PointingHandCursor))
-        if self._docked and not self._dock_hovered:
+        if self._docked and not self._dock_hovered and not self._animating:
             self._dock_hovered = True
             self._undocked_from_dock = True
+            self._animating = True
             self._undock()
 
     def leaveEvent(self, e):
@@ -805,16 +805,19 @@ class DynamicIsland(QMainWindow):
         self._glow_target_speed = 0.0008
         self.setCursor(QCursor(Qt.ArrowCursor))
         if self._undocked_from_dock and not self._mouse_pressed and not self._menu_open:
+            self._animating = True
             self._re_dock_timer.start(400)
         self._dock_hovered = False
 
     def _re_dock_check(self):
         if self._undocked_from_dock and not self._mouse_pressed and not self._hovered:
             self._dock(self._last_dock_mode)
+        self._animating = False
 
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
             self._re_dock_timer.stop()
+            self._animating = False
             if self._docked:
                 return
             self._mouse_pressed = True
@@ -893,6 +896,9 @@ class DynamicIsland(QMainWindow):
         cur = self.geometry()
         cx = cur.center().x()
         cy = cur.center().y()
+        
+        visible = 146
+        
         if mode == DockMode.TOP:
             target = QRect(cx - DOCKED_LEN // 2, screen.top(), DOCKED_LEN, DOCKED_H)
         elif mode == DockMode.BOTTOM:
@@ -902,10 +908,8 @@ class DynamicIsland(QMainWindow):
         elif mode == DockMode.RIGHT:
             target = QRect(screen.right() - DOCKED_W, cy - DOCKED_LEN // 2, DOCKED_W, DOCKED_LEN)
 
-        self.hide()
         self.setGeometry(target)
         self._dock_opacity = 1.0
-        self.show()
         self._save_state()
 
     def _undock(self):
@@ -915,6 +919,8 @@ class DynamicIsland(QMainWindow):
         cur = self.geometry()
         screen = QApplication.primaryScreen().availableGeometry()
         
+        visible = 146
+        
         nx = cur.center().x() - COMPACT_W // 2
         ny = cur.center().y() - COMPACT_H // 2
         
@@ -923,11 +929,11 @@ class DynamicIsland(QMainWindow):
         elif self._last_dock_mode == DockMode.BOTTOM:
             ny = screen.bottom() - COMPACT_H
         elif self._last_dock_mode == DockMode.LEFT:
-            nx = screen.left()
+            nx = screen.left() - (COMPACT_W - visible)
         elif self._last_dock_mode == DockMode.RIGHT:
-            nx = screen.right() - COMPACT_W
+            nx = screen.right() - visible
         
-        nx = max(screen.left(), min(nx, screen.right() - COMPACT_W))
+        nx = max(screen.left() - (COMPACT_W - visible), min(nx, screen.right() - visible))
         ny = max(screen.top(), min(ny, screen.bottom() - COMPACT_H))
         
         target = QRect(nx, ny, COMPACT_W, COMPACT_H)
