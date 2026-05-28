@@ -211,20 +211,46 @@ class FetchThread(QThread):
                 res = r.json()
                 data = res.get('data', {})
                 
-                # 从 usage.items 中获取 plan_total_token
+                # 获取月度总用量（最准确）
+                month_usage = data.get('monthUsage', {})
+                month_items = month_usage.get('items', [])
+                month_used = 0
+                month_total = 0
+                month_percent = 0
+                
+                for item in month_items:
+                    if item.get('name') == 'month_total_token':
+                        month_used = item.get('used', 0)
+                        month_total = item.get('limit', 0)
+                        month_percent = item.get('percent', 0) * 100
+                        break
+                
+                # 获取套餐用量
                 usage = data.get('usage', {})
                 items = usage.get('items', [])
                 
-                used = 0
-                total = 0
-                percent = 0
+                plan_used = 0
+                plan_total = 0
+                plan_percent = 0
+                compensation_used = 0
                 
                 for item in items:
                     if item.get('name') == 'plan_total_token':
-                        used = item.get('used', 0)
-                        total = item.get('limit', 0)
-                        percent = item.get('percent', 0) * 100  # 转换为百分比
-                        break
+                        plan_used = item.get('used', 0)
+                        plan_total = item.get('limit', 0)
+                        plan_percent = item.get('percent', 0) * 100
+                    elif item.get('name') == 'compensation_total_token':
+                        compensation_used = item.get('used', 0)
+                
+                # 优先使用月度总用量，如果为0则使用套餐+补偿
+                if month_used > 0:
+                    used = month_used
+                    total = month_total
+                    percent = month_percent
+                else:
+                    used = plan_used + compensation_used
+                    total = plan_total
+                    percent = (used / total * 100) if total > 0 else 0
                 
                 self.pm.mark_success()
                 self.data_fetched.emit({
