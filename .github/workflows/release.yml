@@ -72,6 +72,11 @@ jobs:
           $size = (Get-Item dist/MiMo-Island.exe).Length / 1MB
           Write-Host "Exe size: $([math]::Round($size, 2)) MB"
       
+      - name: Test exe runs
+        run: |
+          Start-Process -FilePath "dist\MiMo-Island.exe" -PassThru | Start-Sleep -Seconds 3
+          Write-Host "Exe started successfully"
+      
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
