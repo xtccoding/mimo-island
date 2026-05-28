@@ -22,60 +22,16 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pillow
+          pip install pyinstaller
           pip install -e .
       
-      - name: Generate ICO icon
-        run: |
-          python -c "
-          from PIL import Image, ImageDraw
-          
-          size = 256
-          img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-          draw = ImageDraw.Draw(img)
-          
-          # Background rounded rect
-          draw.rounded_rectangle([0, 0, size-1, size-1], radius=56, fill=(14, 14, 20, 255))
-          
-          # X shape (simplified from SVG)
-          pts = [
-            (64, 72), (112, 72), (112, 72),
-            (112, 72), (160, 128), (160, 128),
-            (160, 128), (216, 72), (216, 72),
-            (248, 72), (176, 160), (176, 160),
-            (176, 160), (248, 264), (248, 264),
-            (208, 264), (160, 192), (160, 192),
-            (160, 192), (112, 264), (112, 264),
-            (64, 264), (144, 168), (144, 168),
-          ]
-          
-          # Draw gradient-like X
-          for i in range(0, len(pts)-1, 2):
-            x1, y1 = pts[i]
-            x2, y2 = pts[i+1]
-            r = int(70 + (34-70) * (i/len(pts)))
-            g = int(140 + (211-140) * (i/len(pts)))
-            b = int(255 + (238-255) * (i/len(pts)))
-            draw.line([(x1, y1), (x2, y2)], fill=(r, g, b, 255), width=20)
-          
-          # Generate ICO
-          sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-          img.save('assets/icon.ico', format='ICO', sizes=sizes)
-          print('ICO generated successfully')
-          "
-      
-      - name: Build exe with PyInstaller
+      - name: Build exe
         run: pyinstaller mimo-island.spec
       
       - name: Check exe size
         run: |
           $size = (Get-Item dist/MiMo-Island.exe).Length / 1MB
           Write-Host "Exe size: $([math]::Round($size, 2)) MB"
-      
-      - name: Test exe runs
-        run: |
-          Start-Process -FilePath "dist\MiMo-Island.exe" -PassThru | Start-Sleep -Seconds 3
-          Write-Host "Exe started successfully"
       
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
