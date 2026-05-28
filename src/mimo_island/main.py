@@ -211,7 +211,7 @@ class FetchThread(QThread):
                 res = r.json()
                 data = res.get('data', {})
                 
-                # 获取月度总用量（最准确）
+                # 获取月度总用量
                 month_usage = data.get('monthUsage', {})
                 month_items = month_usage.get('items', [])
                 month_used = 0
@@ -225,14 +225,16 @@ class FetchThread(QThread):
                         month_percent = item.get('percent', 0) * 100
                         break
                 
-                # 获取套餐用量
+                # 获取套餐和补偿用量
                 usage = data.get('usage', {})
                 items = usage.get('items', [])
                 
                 plan_used = 0
                 plan_total = 0
                 plan_percent = 0
-                compensation_used = 0
+                comp_used = 0
+                comp_total = 0
+                comp_percent = 0
                 
                 for item in items:
                     if item.get('name') == 'plan_total_token':
@@ -240,34 +242,32 @@ class FetchThread(QThread):
                         plan_total = item.get('limit', 0)
                         plan_percent = item.get('percent', 0) * 100
                     elif item.get('name') == 'compensation_total_token':
-                        compensation_used = item.get('used', 0)
-                
-                # 优先使用月度总用量，如果为0则使用套餐+补偿
-                if month_used > 0:
-                    used = month_used
-                    total = month_total
-                    percent = month_percent
-                else:
-                    used = plan_used + compensation_used
-                    total = plan_total
-                    percent = (used / total * 100) if total > 0 else 0
+                        comp_used = item.get('used', 0)
+                        comp_total = item.get('limit', 0)
+                        comp_percent = item.get('percent', 0) * 100
                 
                 self.pm.mark_success()
                 self.data_fetched.emit({
-                    "used": used,
-                    "total": total,
-                    "percent": percent,
+                    "plan_used": plan_used,
+                    "plan_total": plan_total,
+                    "plan_percent": plan_percent,
+                    "comp_used": comp_used,
+                    "comp_total": comp_total,
+                    "comp_percent": comp_percent,
+                    "month_used": month_used,
+                    "month_total": month_total,
+                    "month_percent": month_percent,
                     "ok": True
                 })
             elif r.status_code == 401:
                 self.pm.mark_error("401")
-                self.data_fetched.emit({"used": 0, "total": 0, "percent": 0, "ok": False, "msg": "Cookie已过期", "code": 401})
+                self.data_fetched.emit({"ok": False, "msg": "Cookie已过期", "code": 401})
             else:
                 self.pm.mark_error(f"{r.status_code}")
-                self.data_fetched.emit({"used": 0, "total": 0, "percent": 0, "ok": False, "msg": f"HTTP {r.status_code}"})
+                self.data_fetched.emit({"ok": False, "msg": f"HTTP {r.status_code}"})
         except Exception as e:
             self.pm.mark_error(str(e)[:20])
-            self.data_fetched.emit({"used": 0, "total": 0, "percent": 0, "ok": False, "msg": str(e)[:20]})
+            self.data_fetched.emit({"ok": False, "msg": str(e)[:20]})
 
 
 class SpringValue:
@@ -394,7 +394,11 @@ class DynamicIsland(QMainWindow):
         self._error_msg = ""
         self._error_code = 0
 
-        self.data = {"used": 0, "total": 0, "percent": 0}
+        self.data = {
+            "plan_used": 0, "plan_total": 0, "plan_percent": 0,
+            "comp_used": 0, "comp_total": 0, "comp_percent": 0,
+            "month_used": 0, "month_total": 0, "month_percent": 0,
+        }
         self._pct = SpringValue(0)
         self._used = SpringValue(0)
 
@@ -490,8 +494,13 @@ class DynamicIsland(QMainWindow):
     def on_data(self, d):
         if d["ok"]:
             self.data = d
-            self._pct.target(d["percent"])
-            self._used.target(d["used"])
+            # 优先显示正在使用的额度（补偿额度先用）
+            if d.get("comp_used", 0) > 0:
+                self._pct.target(d["comp_percent"])
+                self._used.target(d["comp_used"])
+            else:
+                self._pct.target(d["plan_percent"])
+                self._used.target(d["plan_used"])
             self._error_msg = ""
             self._error_code = 0
         else:
@@ -685,27 +694,37 @@ class DynamicIsland(QMainWindow):
                 p.setFont(font_ui(11))
                 p.drawText(QRectF(pad, y0, w - pad * 2, rh * 2), Qt.AlignCenter, self._error_msg)
         else:
-            p.setPen(label_color)
-            p.setFont(font_ui(10, QFont.Light))
-            p.drawText(QRectF(pad, y0, 50, rh), Qt.AlignVCenter | Qt.AlignLeft, "已用")
-
-            p.setPen(val_color)
-            p.setFont(font_mono(11, QFont.Medium))
-            p.drawText(QRectF(pad + 52, y0, 200, rh), Qt.AlignVCenter | Qt.AlignLeft, f"{int(self._used.val):,}")
-
-            p.setPen(label_color)
-            p.setFont(font_ui(10, QFont.Light))
-            p.drawText(QRectF(pad, y0 + rh, 50, rh), Qt.AlignVCenter | Qt.AlignLeft, "总额")
-
-            p.setPen(val_color)
-            p.setFont(font_mono(11, QFont.Medium))
-            p.drawText(QRectF(pad + 52, y0 + rh, 200, rh), Qt.AlignVCenter | Qt.AlignLeft, f"{self.data.get('total', 0):,}")
-
-            by = y0 + rh * 2 + 12
+            plan_used = self.data.get('plan_used', 0)
+            plan_total = self.data.get('plan_total', 0)
+            comp_used = self.data.get('comp_used', 0)
+            comp_total = self.data.get('comp_total', 0)
+            
+            # 补偿额度（优先显示）
+            if comp_total > 0:
+                p.setPen(QColor(100, 255, 180, alpha))  # 绿色
+                p.setFont(font_ui(9, QFont.Light))
+                p.drawText(QRectF(pad, y0, 60, rh), Qt.AlignVCenter | Qt.AlignLeft, "补偿")
+                p.setPen(val_color)
+                p.setFont(font_mono(10, QFont.Medium))
+                p.drawText(QRectF(pad + 60, y0, 180, rh), Qt.AlignVCenter | Qt.AlignLeft, f"{comp_used:,} / {comp_total:,}")
+                y0 += rh
+            
+            # 主套餐额度
+            if plan_total > 0:
+                p.setPen(QColor(100, 200, 255, alpha))  # 蓝色
+                p.setFont(font_ui(9, QFont.Light))
+                p.drawText(QRectF(pad, y0, 60, rh), Qt.AlignVCenter | Qt.AlignLeft, "套餐")
+                p.setPen(val_color)
+                p.setFont(font_mono(10, QFont.Medium))
+                p.drawText(QRectF(pad + 60, y0, 180, rh), Qt.AlignVCenter | Qt.AlignLeft, f"{plan_used:,} / {plan_total:,}")
+                y0 += rh
+            
+            # 进度条
+            by = y0 + 8
             bx = float(pad)
             bw = float(w - pad * 2)
             bh = 4.0
-            br = 2.0  # 进度条圆角
+            br = 2.0
 
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(255, 255, 255, 12))
