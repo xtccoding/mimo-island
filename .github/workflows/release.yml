@@ -78,16 +78,17 @@ jobs:
         run: |
           mkdir release
           copy cpp\build\MiMoIsland.exe release\
-          copy cpp\build\Qt6Core.dll release\
-          copy cpp\build\Qt6Gui.dll release\
-          copy cpp\build\Qt6Widgets.dll release\
-          copy cpp\build\Qt6Network.dll release\
-          copy cpp\build\Qt6Svg.dll release\
+          $qtBin = "${{ env.Qt6_DIR }}\bin"
+          copy "$qtBin\Qt6Core.dll" release\
+          copy "$qtBin\Qt6Gui.dll" release\
+          copy "$qtBin\Qt6Widgets.dll" release\
+          copy "$qtBin\Qt6Network.dll" release\
+          copy "$qtBin\Qt6Svg.dll" release\
           mkdir release\platforms
-          copy cpp\build\platforms\qwindows.dll release\platforms\
+          copy "$qtBin\..\plugins\platforms\qwindows.dll" release\platforms\
           mkdir release\tls
-          copy cpp\build\tls\qopensslbackend.dll release\tls\
-          copy cpp\build\tls\qschannelbackend.dll release\tls\
+          copy "$qtBin\..\plugins\tls\qopensslbackend.dll" release\tls\
+          copy "$qtBin\..\plugins\tls\qschannelbackend.dll" release\tls\
       
       - name: Create zip
         run: Compress-Archive -Path release\* -DestinationPath MiMoIsland-CPP.zip
