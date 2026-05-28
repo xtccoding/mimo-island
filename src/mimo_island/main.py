@@ -484,11 +484,8 @@ class DynamicIsland(QMainWindow):
         w, h = self.width(), self.height()
 
         path = QPainterPath()
-        if self._expanded:
-            path.addRect(QRectF(0, 0, w, h))
-        else:
-            r = min(h / 2, 22)
-            path.addRoundedRect(QRectF(0, 0, w, h), r, r)
+        r = 12 if self._expanded else min(h / 2, 22)
+        path.addRoundedRect(QRectF(0, 0, w, h), r, r)
         p.setClipPath(path, Qt.IntersectClip)
 
         self._draw_bg(p, w, h)
@@ -508,11 +505,8 @@ class DynamicIsland(QMainWindow):
         grad.setColorAt(1, QColor(14, 14, 20, 220))
         p.setPen(Qt.NoPen)
         p.setBrush(grad)
-        if self._expanded:
-            p.drawRect(QRectF(0, 0, w, h))
-        else:
-            r = min(h / 2, 22)
-            p.drawRoundedRect(QRectF(0, 0, w, h), r, r)
+        r = 12 if self._expanded else min(h / 2, 22)
+        p.drawRoundedRect(QRectF(0, 0, w, h), r, r)
 
     def _draw_glow(self, p, w, h):
         if self._error_code == 401:
@@ -526,18 +520,13 @@ class DynamicIsland(QMainWindow):
         
         p.setPen(Qt.NoPen)
         p.setBrush(g)
-        if self._expanded:
-            p.drawRect(QRectF(-1.5, -1.5, w + 3, h + 3))
-        else:
-            p.drawRoundedRect(QRectF(-1.5, -1.5, w + 3, h + 3), h / 2 + 2, h / 2 + 2)
+        r = 14 if self._expanded else min(h / 2, 22) + 2
+        p.drawRoundedRect(QRectF(-1.5, -1.5, w + 3, h + 3), r, r)
 
     def _draw_border(self, p, w, h):
         path = QPainterPath()
-        if self._expanded:
-            path.addRect(QRectF(0.5, 0.5, w - 1, h - 1))
-        else:
-            r = min(h / 2, 22)
-            path.addRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), r, r)
+        r = 12 if self._expanded else min(h / 2, 22)
+        path.addRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), r, r)
 
         if self._error_code == 401:
             ba = 40 + int(20 * math.sin(self._phase * 2))
@@ -558,13 +547,9 @@ class DynamicIsland(QMainWindow):
         p.drawPath(path)
 
     def _draw_flow_light(self, p, w, h):
-        if self._expanded:
-            path = QPainterPath()
-            path.addRect(QRectF(0, 0, w, h))
-        else:
-            path = QPainterPath()
-            r = min(h / 2, 22)
-            path.addRoundedRect(QRectF(0, 0, w, h), r, r)
+        path = QPainterPath()
+        r = 12 if self._expanded else min(h / 2, 22)
+        path.addRoundedRect(QRectF(0, 0, w, h), r, r)
 
         offset = self._glow_offset
         cx = w * offset
@@ -683,10 +668,11 @@ class DynamicIsland(QMainWindow):
             bx = float(pad)
             bw = float(w - pad * 2)
             bh = 4.0
+            br = 2.0  # 进度条圆角
 
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(255, 255, 255, 12))
-            p.drawRect(QRectF(bx, by, bw, bh))
+            p.drawRoundedRect(QRectF(bx, by, bw, bh), br, br)
 
             pct = self._pct.val
             fw = bw * min(pct / 100, 1)
@@ -695,7 +681,7 @@ class DynamicIsland(QMainWindow):
                 fg.setColorAt(0, QColor(59, 130, 246, alpha))
                 fg.setColorAt(1, QColor(34, 211, 238, alpha))
                 p.setBrush(fg)
-                p.drawRect(QRectF(bx, by, fw, bh))
+                p.drawRoundedRect(QRectF(bx, by, fw, bh), br, br)
 
             p.setPen(QColor(200, 205, 220, alpha))
             p.setFont(font_mono(10, QFont.Medium))
