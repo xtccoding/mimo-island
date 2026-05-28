@@ -72,7 +72,7 @@ jobs:
           mkdir cpp\build
           cd cpp\build
           cmake .. -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
-          cmake --build . --config Release
+          cmake --build .
       
       - name: Prepare release files
         run: |
