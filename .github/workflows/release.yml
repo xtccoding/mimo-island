@@ -54,6 +54,51 @@ jobs:
           name: windows-exe
           path: MiMo-Island.exe
 
+  build-cpp:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.0'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          modules: 'qtsvg'
+      
+      - name: Build
+        run: |
+          mkdir cpp/build
+          cd cpp/build
+          cmake .. -G "Visual Studio 17 2022"
+          cmake --build . --config Release
+      
+      - name: Prepare release files
+        run: |
+          mkdir release
+          copy cpp/build/Release/MiMoIsland.exe release/
+          copy cpp/build/Release/Qt6Core.dll release/
+          copy cpp/build/Release/Qt6Gui.dll release/
+          copy cpp/build/Release/Qt6Widgets.dll release/
+          copy cpp/build/Release/Qt6Network.dll release/
+          copy cpp/build/Release/Qt6Svg.dll release/
+          mkdir release/platforms
+          copy cpp/build/Release/platforms/qwindows.dll release/platforms/
+          mkdir release/tls
+          copy cpp/build/Release/tls/qopensslbackend.dll release/tls/
+          copy cpp/build/Release/tls/qschannelbackend.dll release/tls/
+      
+      - name: Create zip
+        run: Compress-Archive -Path release/* -DestinationPath MiMoIsland-CPP.zip
+      
+      - name: Upload CPP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-windows
+          path: MiMoIsland-CPP.zip
+
   build-package:
     runs-on: ubuntu-latest
     steps:
@@ -79,7 +124,7 @@ jobs:
           path: dist/
 
   release:
-    needs: [build-windows, build-package]
+    needs: [build-windows, build-cpp, build-package]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -92,5 +137,6 @@ jobs:
         with:
           files: |
             artifacts/windows-exe/MiMo-Island.exe
+            artifacts/cpp-windows/MiMoIsland-CPP.zip
             artifacts/python-package/*
           generate_release_notes: true

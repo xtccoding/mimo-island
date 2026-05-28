@@ -1,16 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0E0E14"/>
-      <stop offset="50%" stop-color="#12121A"/>
-      <stop offset="100%" stop-color="#0E0E14"/>
-    </linearGradient>
-    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#468CFF"/>
-      <stop offset="100%" stop-color="#22D3EE"/>
-    </linearGradient>
-  </defs>
-  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
-  <rect x="4" y="4" width="248" height="248" rx="52" fill="none" stroke="url(#glow)" stroke-width="2" opacity="0.4"/>
-  <path fill="url(#glow)" d="M64 72h48l48 56 56-56h32l-72 88 72 104h-40l-56-72-56 72H56l80-96z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="11 10 41 44">
+  <path fill="#000"
+    d="M14 10h10l8 12 9-12h9L37 30l15 24H42L31 38 20 54H11l15-24z"/>
 </svg>

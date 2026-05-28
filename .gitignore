@@ -40,3 +40,14 @@ desktop.ini
 
 # Config
 ~/.mimo_monitor/
+
+# Generated
+assets/icon.ico
+
+# C++ build artifacts
+cpp/build/
+cpp/deploy/
+cpp/*.evb
+*.exe
+*.dll
+*.log
