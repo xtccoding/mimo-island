@@ -14,7 +14,6 @@ from PySide6.QtGui import (
     QLinearGradient, QBrush, QPen, QAction
 )
 
-USER_ID = "3210225705"
 API_URL = "https://platform.xiaomimimo.com/api/v1/tokenPlan/usage"
 
 COMPACT_W, COMPACT_H = 168, 44

@@ -6,7 +6,7 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
-    { name = "ctooc" }
+    { name = "xtccoding" }
 ]
 keywords = ["mimo", "token", "monitor", "dynamic-island", "floating-widget"]
 classifiers = [
