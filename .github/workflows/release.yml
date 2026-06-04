@@ -21,7 +21,7 @@ jobs:
           cache: 'pip'
       
       - name: Cache pip packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~\AppData\Local\pip\Cache
@@ -36,7 +36,7 @@ jobs:
           pip install -e .
       
       - name: Cache PyInstaller build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build\mimo-island
           key: ${{ runner.os }}-pyinstaller-${{ hashFiles('src/**/*.py', 'mimo-island.spec') }}
@@ -66,7 +66,7 @@ jobs:
       
       - name: Cache Qt
         id: cache-qt
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/qt
           key: ${{ runner.os }}-qt-6.7.0-msvc2019_64
@@ -85,7 +85,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
       
       - name: Cache CMake build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: cpp\build
           key: ${{ runner.os }}-cmake-${{ hashFiles('cpp/src/**', 'cpp/CMakeLists.txt') }}
