@@ -54,7 +54,7 @@ jobs:
           Write-Host "Exe size: $([math]::Round($size, 2)) MB"
       
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-exe
           path: dist\MiMo-Island.exe
@@ -125,7 +125,7 @@ jobs:
         run: Compress-Archive -Path release\* -DestinationPath MiMoIsland-CPP.zip
       
       - name: Upload CPP artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cpp-windows
           path: MiMoIsland-CPP.zip
